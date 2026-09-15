@@ -1,10 +1,14 @@
 const fs = require("node:fs");
+const path = require("node:path");
 const { bundledFile, userFile } = require("./paths");
 
 const DATABASE_ROOT = "V3";
 
 function loadFirebaseConfig() {
-  const candidates = [userFile("firebase_config.json"), bundledFile("firebase_config.json")];
+  const resourceConfig = process.resourcesPath
+    ? path.join(process.resourcesPath, "firebase_config.json")
+    : "";
+  const candidates = [userFile("firebase_config.json"), resourceConfig, bundledFile("firebase_config.json")].filter(Boolean);
   for (const filePath of candidates) {
     if (fs.existsSync(filePath)) {
       const config = JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -17,7 +21,7 @@ function loadFirebaseConfig() {
       };
     }
   }
-  throw new Error(`Create firebase_config.json in the repo root or ${userFile("firebase_config.json")}`);
+  throw new Error(`Firebase config was not found. Expected embedded config or ${userFile("firebase_config.json")}`);
 }
 
 class FirebaseRegistry {

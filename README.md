@@ -12,7 +12,7 @@ Remote mouse/keyboard relay is intentionally still a scaffold, matching `pc-moni
 ## Firebase config
 
 Create `firebase_config.json` in the repo root, or place it in `%APPDATA%\PcMonitor3\firebase_config.json`.
-When `firebase_config.json` exists in the repo root during packaging, it is embedded into both portable Electron apps. The build also maps `firebase_config(M).json` into the packaged app as `firebase_config.json` when that private file exists.
+The build maps `firebase_config(M).json` into both packaged apps as an embedded `resources\firebase_config.json`.
 
 ```json
 {
