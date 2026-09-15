@@ -120,7 +120,9 @@ function renderDetails() {
   metadata.textContent = metadataFor(device);
   const url = streamUrl(device);
   if (url) {
-    screenImage.src = `${url}?t=${Date.now()}`;
+    if (screenImage.src !== url) {
+      screenImage.src = url;
+    }
     screenPlaceholder.hidden = true;
   } else {
     screenImage.removeAttribute("src");
@@ -136,7 +138,7 @@ function renderGrid() {
     const url = streamUrl(device);
     card.innerHTML = `
       <header><strong>${titleFor(device)}</strong><span>${statusFor(device)}</span></header>
-      ${url ? `<img src="${url}?t=${Date.now()}" alt="${titleFor(device)} screen" />` : "<p>No stream yet</p>"}
+      ${url ? `<img src="${url}" alt="${titleFor(device)} screen" />` : "<p>No stream yet</p>"}
     `;
     grid.appendChild(card);
   }

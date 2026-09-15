@@ -1,5 +1,7 @@
 const os = require("node:os");
 
+let previousCpuTimes = null;
+
 function localIpAddress() {
   const networks = os.networkInterfaces();
   for (const addresses of Object.values(networks)) {
@@ -25,9 +27,28 @@ function memoryPercent() {
 }
 
 function cpuLoadPercent() {
-  const load = os.loadavg()[0] || 0;
-  const cpuCount = Math.max(os.cpus().length, 1);
-  return Math.min(100, Math.round((load / cpuCount) * 100));
+  const current = os.cpus().map((cpu) => cpu.times);
+  if (!previousCpuTimes) {
+    previousCpuTimes = current;
+    return 0;
+  }
+
+  let idleDelta = 0;
+  let totalDelta = 0;
+  for (let index = 0; index < current.length; index += 1) {
+    const now = current[index];
+    const before = previousCpuTimes[index] || now;
+    const nowTotal = now.user + now.nice + now.sys + now.idle + now.irq;
+    const beforeTotal = before.user + before.nice + before.sys + before.idle + before.irq;
+    idleDelta += Math.max(0, now.idle - before.idle);
+    totalDelta += Math.max(0, nowTotal - beforeTotal);
+  }
+  previousCpuTimes = current;
+
+  if (totalDelta <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
 }
 
 function accessMetadata(state, screenSize, frameTimestamp, remoteInteractionRequested) {

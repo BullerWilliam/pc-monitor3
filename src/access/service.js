@@ -109,7 +109,8 @@ class AccessService {
 
   createServer() {
     return http.createServer(async (request, response) => {
-      if (request.url === "/status") {
+      const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+      if (requestUrl.pathname === "/status") {
         const body = JSON.stringify(this.metadata());
         response.writeHead(200, {
           "Content-Type": "application/json",
@@ -119,7 +120,7 @@ class AccessService {
         return;
       }
 
-      if (request.url === "/screen.mjpeg") {
+      if (requestUrl.pathname === "/screen.mjpeg") {
         response.writeHead(200, {
           "Cache-Control": "no-cache, private",
           "Pragma": "no-cache",
@@ -226,6 +227,18 @@ function commandShimPath() {
   return path.join(path.dirname(userFile("placeholder")), "bin", "access.cmd");
 }
 
+function commandShimPaths() {
+  const appDataCmd = commandShimPath();
+  const appDataBat = appDataCmd.replace(/\.cmd$/i, ".bat");
+  const exeDir = path.dirname(accessExecutablePath());
+  return [
+    appDataCmd,
+    appDataBat,
+    path.join(exeDir, "access.cmd"),
+    path.join(exeDir, "access.bat")
+  ];
+}
+
 function installCommandShim() {
   ensureAppDir();
   loadAccessState();
@@ -263,17 +276,20 @@ function installCommandShim() {
     "echo Access Startup registration and command removed.",
     "exit /b 0"
   ].join("\r\n");
-  fs.writeFileSync(commandShimPath(), `${script}\r\n`, "utf8");
+  for (const shimPath of commandShimPaths()) {
+    fs.writeFileSync(shimPath, `${script}\r\n`, "utf8");
+  }
   addDirectoryToUserPath(binDir);
   return commandShimPath();
 }
 
 function removeCommandShim() {
-  const shimPath = commandShimPath();
-  const binDir = path.dirname(shimPath);
+  const binDir = path.dirname(commandShimPath());
   removeDirectoryFromUserPath(binDir);
-  if (fs.existsSync(shimPath)) {
-    fs.unlinkSync(shimPath);
+  for (const shimPath of commandShimPaths()) {
+    if (fs.existsSync(shimPath)) {
+      fs.unlinkSync(shimPath);
+    }
   }
 }
 
@@ -288,6 +304,7 @@ function addDirectoryToUserPath(directory) {
     windowsHide: true
   });
   process.env.Path = nextPath;
+  broadcastEnvironmentChange();
 }
 
 function removeDirectoryFromUserPath(directory) {
@@ -302,6 +319,22 @@ function removeDirectoryFromUserPath(directory) {
     windowsHide: true
   });
   process.env.Path = nextPath;
+  broadcastEnvironmentChange();
+}
+
+function broadcastEnvironmentChange() {
+  const command = [
+    "Add-Type -Namespace Win32 -Name NativeMethods -MemberDefinition '[DllImport(\"user32.dll\", SetLastError=true, CharSet=CharSet.Auto)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);';",
+    "$result = [UIntPtr]::Zero;",
+    "[Win32.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result) | Out-Null"
+  ].join(" ");
+  try {
+    childProcess.execFileSync("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command], {
+      windowsHide: true
+    });
+  } catch {
+    // New shells will still read the registry value even if broadcasting fails.
+  }
 }
 
 module.exports = {
