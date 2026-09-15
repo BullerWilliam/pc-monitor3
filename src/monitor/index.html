@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PcMonitor3 Monitor</title>
+    <link rel="stylesheet" href="../shared/styles.css" />
+  </head>
+  <body>
+    <main class="monitor-shell">
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div>
+            <p class="eyebrow">Monitor app</p>
+            <h1>Paired PCs</h1>
+          </div>
+          <button id="multiButton">Grid</button>
+        </div>
+        <form id="addForm" class="add-form">
+          <input id="pairingInput" placeholder="Pairing code" autocomplete="off" />
+          <button>Add</button>
+        </form>
+        <p id="registryError" class="error-text"></p>
+        <div id="deviceList" class="device-list"></div>
+      </aside>
+      <section class="workspace">
+        <header class="detail-header">
+          <div>
+            <h2 id="deviceTitle">No PC selected</h2>
+            <p id="deviceSubtitle">Add or select a pairing code.</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="remoteToggle" disabled />
+            <span>Remote interaction</span>
+          </label>
+        </header>
+        <section class="toolbar">
+          <input id="nicknameInput" placeholder="Nickname" disabled />
+          <button id="saveNickname" disabled>Save nickname</button>
+        </section>
+        <section class="content">
+          <div class="screen-frame">
+            <img id="screenImage" alt="Live screen" />
+            <p id="screenPlaceholder">Waiting for a frame</p>
+          </div>
+          <pre id="metadata">Pair a PC to see status and system metadata.</pre>
+        </section>
+      </section>
+    </main>
+    <div id="gridModal" class="modal hidden">
+      <div class="modal-head">
+        <h2>Multi-view</h2>
+        <button id="closeGrid">Close</button>
+      </div>
+      <div id="grid" class="grid"></div>
+    </div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

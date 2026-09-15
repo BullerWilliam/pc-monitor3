@@ -1,0 +1,19 @@
+{
+  "appId": "com.bullerwilliam.pcmonitor3.monitor",
+  "productName": "PcMonitor3 Monitor",
+  "artifactName": "monitor-${version}.${ext}",
+  "directories": {
+    "output": "release/monitor"
+  },
+  "files": [
+    "src/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "name": "pc-monitor3-monitor"
+  },
+  "win": {
+    "signAndEditExecutable": false,
+    "target": "portable"
+  }
+}

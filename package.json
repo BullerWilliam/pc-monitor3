@@ -1,0 +1,23 @@
+{
+  "name": "pc-monitor3",
+  "version": "3.0.0",
+  "description": "Consent-based PC monitoring apps built with Electron.",
+  "main": "src/main.js",
+  "author": "BullerWilliam",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "start": "electron .",
+    "start:access": "electron . --access",
+    "start:monitor": "electron . --monitor",
+    "dist": "npm run dist:access && npm run dist:monitor",
+    "dist:access": "electron-builder --config electron-builder.access.json",
+    "dist:monitor": "electron-builder --config electron-builder.monitor.json"
+  },
+  "devDependencies": {
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "allowScripts": {
+    "electron@32.3.3": true
+  }
+}

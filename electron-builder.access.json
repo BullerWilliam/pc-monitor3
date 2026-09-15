@@ -1,0 +1,19 @@
+{
+  "appId": "com.bullerwilliam.pcmonitor3.access",
+  "productName": "PcMonitor3 Access",
+  "artifactName": "access-${version}.${ext}",
+  "directories": {
+    "output": "release/access"
+  },
+  "files": [
+    "src/**/*",
+    "package.json"
+  ],
+  "extraMetadata": {
+    "name": "pc-monitor3-access"
+  },
+  "win": {
+    "signAndEditExecutable": false,
+    "target": "portable"
+  }
+}
