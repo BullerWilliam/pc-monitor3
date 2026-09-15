@@ -1,6 +1,8 @@
 const fs = require("node:fs");
 const { bundledFile, userFile } = require("./paths");
 
+const DATABASE_ROOT = "V3";
+
 function loadFirebaseConfig() {
   const candidates = [userFile("firebase_config.json"), bundledFile("firebase_config.json")];
   for (const filePath of candidates) {
@@ -22,11 +24,13 @@ class FirebaseRegistry {
   constructor(config) {
     this.databaseUrl = config.databaseUrl;
     this.authToken = config.authToken;
+    this.databaseRoot = DATABASE_ROOT;
   }
 
   url(path) {
     const auth = this.authToken ? `?auth=${encodeURIComponent(this.authToken)}` : "";
-    return `${this.databaseUrl}/${path}.json${auth}`;
+    const cleanPath = String(path).replace(/^\/+/, "");
+    return `${this.databaseUrl}/${this.databaseRoot}/${cleanPath}.json${auth}`;
   }
 
   async fetchPairing(pairingCode) {

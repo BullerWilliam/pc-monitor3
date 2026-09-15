@@ -1,7 +1,7 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const { BrowserWindow, app, ipcMain } = require("electron");
-const { AccessService } = require("./access/service");
+const { AccessService, loadAccessState } = require("./access/service");
 const { FirebaseRegistry, loadFirebaseConfig } = require("./shared/firebase");
 const { ensureAppDir } = require("./shared/storage");
 const { loadMonitorState, normalizeCode, saveMonitorState, snapshotPath } = require("./monitor/store");
@@ -27,11 +27,11 @@ function modeFromArgs() {
 
 function createWindow(mode) {
   mainWindow = new BrowserWindow({
-    width: mode === "access" ? 680 : 1320,
-    height: mode === "access" ? 520 : 860,
-    minWidth: mode === "access" ? 560 : 1040,
-    minHeight: mode === "access" ? 420 : 680,
-    title: mode === "access" ? "PcMonitor3 Access" : "PcMonitor3 Monitor",
+    width: 1320,
+    height: 860,
+    minWidth: 1040,
+    minHeight: 680,
+    title: "PcMonitor3 Monitor",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -41,6 +41,72 @@ function createWindow(mode) {
   });
 
   mainWindow.loadFile(path.join(__dirname, mode, "index.html"));
+}
+
+function accessCommandFromArgs() {
+  const commands = process.argv
+    .slice(1)
+    .filter((arg) => arg !== "." && path.resolve(arg) !== app.getAppPath())
+    .filter((arg) => !arg.toLowerCase().startsWith("--access"))
+    .filter((arg) => !arg.toLowerCase().startsWith("--monitor"))
+    .filter((arg) => !arg.toLowerCase().endsWith(".exe"))
+    .filter((arg) => !arg.toLowerCase().endsWith("electron"))
+    .filter((arg) => !arg.includes("\\") && !arg.includes("/"));
+  return (commands[0] || "start").toLowerCase();
+}
+
+function accessHelpText() {
+  return [
+    "PcMonitor3 Access",
+    "",
+    "Commands:",
+    "  access help             Show this help text",
+    "  access code             Print this PC's pairing code",
+    "  access remove           Remove Startup registration and this command",
+    "",
+    "Run access.exe directly once to install Startup registration, add the access command, and start the background agent."
+  ].join("\n");
+}
+
+function writeConsole(message) {
+  process.stdout.write(`${message}\n`);
+}
+
+async function runAccessCommand() {
+  app.setName("PcMonitor3 Access");
+  const command = accessCommandFromArgs();
+
+  if (command === "help" || command === "-h" || command === "--help") {
+    writeConsole(accessHelpText());
+    app.quit();
+    return;
+  }
+
+  if (command === "code") {
+    writeConsole(loadAccessState().pairingCode);
+    app.quit();
+    return;
+  }
+
+  accessService = new AccessService();
+
+  if (command === "remove") {
+    accessService.removeRegistration();
+    writeConsole("Removed Startup registration and the access command.");
+    app.quit();
+    return;
+  }
+
+  if (command !== "start") {
+    writeConsole(`Unknown access command: ${command}`);
+    writeConsole("");
+    writeConsole(accessHelpText());
+    app.quit();
+    return;
+  }
+
+  accessService.installStartupShortcut();
+  await accessService.start();
 }
 
 function loadMonitorRegistry() {
@@ -55,15 +121,6 @@ function loadMonitorRegistry() {
 
 function findDevice(code) {
   return monitorState.devices.find((device) => device.pairingCode === code);
-}
-
-function registerAccessIpc() {
-  ipcMain.handle("access:get-state", () => accessService ? accessService.emit() : null);
-  ipcMain.handle("access:install-startup", () => accessService.installStartupShortcut());
-  ipcMain.handle("access:uninstall", () => {
-    accessService.uninstall();
-    return true;
-  });
 }
 
 function registerMonitorIpc() {
@@ -153,15 +210,11 @@ function registerMonitorIpc() {
 app.whenReady().then(async () => {
   ensureAppDir();
   const mode = modeFromArgs();
-  createWindow(mode);
 
   if (mode === "access") {
-    registerAccessIpc();
-    accessService = new AccessService((state) => {
-      mainWindow?.webContents.send("access:update", state);
-    });
-    await accessService.start();
+    await runAccessCommand();
   } else {
+    createWindow(mode);
     monitorState = loadMonitorState();
     loadMonitorRegistry();
     registerMonitorIpc();

@@ -1,18 +1,24 @@
 {
   "appId": "com.bullerwilliam.pcmonitor3.access",
   "productName": "PcMonitor3 Access",
-  "artifactName": "access-${version}.${ext}",
+  "artifactName": "access.${ext}",
   "directories": {
     "output": "release/access"
   },
   "files": [
     "src/**/*",
+    "firebase_config.json",
+    {
+      "from": "firebase_config(M).json",
+      "to": "firebase_config.json"
+    },
     "package.json"
   ],
   "extraMetadata": {
     "name": "pc-monitor3-access"
   },
   "win": {
+    "executableName": "access",
     "signAndEditExecutable": false,
     "target": "portable"
   }

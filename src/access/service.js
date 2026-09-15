@@ -1,14 +1,31 @@
 const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
-const { BrowserWindow, app, desktopCapturer, nativeImage, shell } = require("electron");
+const { app, desktopCapturer, nativeImage, shell } = require("electron");
 const { FirebaseRegistry, loadFirebaseConfig } = require("../shared/firebase");
 const { userFile } = require("../shared/paths");
 const { ensureAppDir, readJson, writeJson } = require("../shared/storage");
 const { accessMetadata } = require("../shared/systemInfo");
 
 const STATE_PATH = () => userFile("access_state.json");
+
+function accessExecutablePath() {
+  return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+}
+
+function startupShortcutPath() {
+  return path.join(
+    app.getPath("appData"),
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+    "PcMonitor3 Access.lnk"
+  );
+}
 
 function createPairingCode() {
   return crypto.randomBytes(3).toString("hex").toUpperCase();
@@ -30,7 +47,7 @@ function loadAccessState() {
 }
 
 class AccessService {
-  constructor(sendUpdate) {
+  constructor(sendUpdate = () => {}) {
     this.sendUpdate = sendUpdate;
     this.state = loadAccessState();
     this.frame = Buffer.alloc(0);
@@ -42,7 +59,6 @@ class AccessService {
     this.registry = null;
     this.registryError = "";
     this.remoteInteractionRequested = false;
-    this.overlay = null;
   }
 
   async start() {
@@ -63,7 +79,6 @@ class AccessService {
     clearInterval(this.captureTimer);
     clearInterval(this.heartbeatTimer);
     this.server?.close();
-    this.overlay?.close();
   }
 
   loadRegistry() {
@@ -162,65 +177,36 @@ class AccessService {
       return;
     }
     this.remoteInteractionRequested = requested;
-    if (requested) {
-      this.showOverlay();
-    } else {
-      this.overlay?.hide();
-    }
-  }
-
-  showOverlay() {
-    if (!this.overlay || this.overlay.isDestroyed()) {
-      this.overlay = new BrowserWindow({
-        width: 360,
-        height: 110,
-        x: 20,
-        y: 20,
-        frame: true,
-        resizable: false,
-        alwaysOnTop: true,
-        title: "Remote session active",
-        webPreferences: {
-          sandbox: true
-        }
-      });
-      this.overlay.loadFile(path.join(__dirname, "overlay.html"));
-    }
-    this.overlay.show();
   }
 
   installStartupShortcut() {
-    const startupPath = path.join(
-      app.getPath("appData"),
-      "Microsoft",
-      "Windows",
-      "Start Menu",
-      "Programs",
-      "Startup"
-    );
+    const startupPath = path.dirname(startupShortcutPath());
     fs.mkdirSync(startupPath, { recursive: true });
-    const shortcutPath = path.join(startupPath, "PcMonitor3 Access.lnk");
-    const shortcutTarget = app.isPackaged ? process.execPath : process.execPath;
-    const shortcutArgs = app.isPackaged ? "--access" : `"${app.getAppPath()}" --access`;
+    const shortcutPath = startupShortcutPath();
+    const shortcutTarget = accessExecutablePath();
+    const shortcutArgs = app.isPackaged ? "" : `"${app.getAppPath()}" --access`;
     shell.writeShortcutLink(shortcutPath, "create", {
       target: shortcutTarget,
       args: shortcutArgs,
-      workingDirectory: app.isPackaged ? path.dirname(process.execPath) : app.getAppPath(),
+      workingDirectory: app.isPackaged ? path.dirname(shortcutTarget) : app.getAppPath(),
       description: "PcMonitor3 Access Agent"
     });
     app.setLoginItemSettings({
       openAtLogin: true,
-      path: process.execPath,
-      args: app.isPackaged ? ["--access"] : [app.getAppPath(), "--access"]
+      path: shortcutTarget,
+      args: app.isPackaged ? [] : [app.getAppPath(), "--access"]
     });
+    installCommandShim();
     return shortcutPath;
   }
 
-  uninstall() {
-    app.setLoginItemSettings({ openAtLogin: false, path: process.execPath });
-    if (fs.existsSync(STATE_PATH())) {
-      fs.unlinkSync(STATE_PATH());
+  removeRegistration() {
+    app.setLoginItemSettings({ openAtLogin: false, path: accessExecutablePath() });
+    const shortcutPath = startupShortcutPath();
+    if (fs.existsSync(shortcutPath)) {
+      fs.unlinkSync(shortcutPath);
     }
+    removeCommandShim();
   }
 
   emit() {
@@ -236,6 +222,90 @@ class AccessService {
   }
 }
 
+function commandShimPath() {
+  return path.join(path.dirname(userFile("placeholder")), "bin", "access.cmd");
+}
+
+function installCommandShim() {
+  ensureAppDir();
+  loadAccessState();
+  const binDir = path.dirname(commandShimPath());
+  fs.mkdirSync(binDir, { recursive: true });
+  const target = app.isPackaged ? accessExecutablePath() : process.execPath;
+  const devArgs = app.isPackaged ? "" : ` "${app.getAppPath()}" --access`;
+  const launch = `"${target}"${devArgs}`;
+  const script = [
+    "@echo off",
+    "setlocal",
+    "set COMMAND=%~1",
+    "if \"%COMMAND%\"==\"\" set COMMAND=help",
+    "if /I \"%COMMAND%\"==\"help\" goto help",
+    "if /I \"%COMMAND%\"==\"-h\" goto help",
+    "if /I \"%COMMAND%\"==\"--help\" goto help",
+    "if /I \"%COMMAND%\"==\"code\" goto code",
+    "if /I \"%COMMAND%\"==\"remove\" goto remove",
+    "echo Unknown access command: %COMMAND%",
+    "echo.",
+    "goto help",
+    ":help",
+    "echo PcMonitor3 Access",
+    "echo.",
+    "echo Commands:",
+    "echo   access help             Show this help text",
+    "echo   access code             Print this PC's pairing code",
+    "echo   access remove           Remove Startup registration and this command",
+    "exit /b 0",
+    ":code",
+    "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$p = Join-Path $env:APPDATA 'PcMonitor3\\access_state.json'; if (!(Test-Path -LiteralPath $p)) { Write-Error 'No access state found. Run access.exe once first.'; exit 1 }; (Get-Content -LiteralPath $p -Raw | ConvertFrom-Json).pairingCode\"",
+    "exit /b %ERRORLEVEL%",
+    ":remove",
+    `start /wait "" ${launch} remove`,
+    "echo Access Startup registration and command removed.",
+    "exit /b 0"
+  ].join("\r\n");
+  fs.writeFileSync(commandShimPath(), `${script}\r\n`, "utf8");
+  addDirectoryToUserPath(binDir);
+  return commandShimPath();
+}
+
+function removeCommandShim() {
+  const shimPath = commandShimPath();
+  const binDir = path.dirname(shimPath);
+  removeDirectoryFromUserPath(binDir);
+  if (fs.existsSync(shimPath)) {
+    fs.unlinkSync(shimPath);
+  }
+}
+
+function addDirectoryToUserPath(directory) {
+  const currentPath = process.env.Path || process.env.PATH || "";
+  const parts = currentPath.split(";").filter(Boolean);
+  if (parts.some((part) => part.toLowerCase() === directory.toLowerCase())) {
+    return;
+  }
+  const nextPath = [...parts, directory].join(";");
+  childProcess.execFileSync("reg", ["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", nextPath, "/f"], {
+    windowsHide: true
+  });
+  process.env.Path = nextPath;
+}
+
+function removeDirectoryFromUserPath(directory) {
+  const currentPath = process.env.Path || process.env.PATH || "";
+  const parts = currentPath.split(";").filter(Boolean);
+  const nextParts = parts.filter((part) => part.toLowerCase() !== directory.toLowerCase());
+  if (nextParts.length === parts.length) {
+    return;
+  }
+  const nextPath = nextParts.join(";");
+  childProcess.execFileSync("reg", ["add", "HKCU\\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", nextPath, "/f"], {
+    windowsHide: true
+  });
+  process.env.Path = nextPath;
+}
+
 module.exports = {
-  AccessService
+  AccessService,
+  installCommandShim,
+  loadAccessState
 };

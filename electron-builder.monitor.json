@@ -7,6 +7,11 @@
   },
   "files": [
     "src/**/*",
+    "firebase_config.json",
+    {
+      "from": "firebase_config(M).json",
+      "to": "firebase_config.json"
+    },
     "package.json"
   ],
   "extraMetadata": {
