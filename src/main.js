@@ -11,6 +11,7 @@ let accessService;
 let monitorRegistry = null;
 let monitorRegistryError = "";
 let monitorState = { devices: [] };
+const monitorStreams = new Map();
 
 function modeFromArgs() {
   const args = process.argv.map((arg) => arg.toLowerCase());
@@ -205,6 +206,79 @@ function registerMonitorIpc() {
     saveMonitorState(monitorState);
     return filePath;
   });
+
+  ipcMain.handle("monitor:start-stream", (_event, pairingCode, streamUrl) => {
+    startMonitorStream(normalizeCode(pairingCode), String(streamUrl || ""));
+    return true;
+  });
+
+  ipcMain.handle("monitor:stop-stream", (_event, pairingCode) => {
+    stopMonitorStream(normalizeCode(pairingCode));
+    return true;
+  });
+}
+
+function stopMonitorStream(pairingCode) {
+  const existing = monitorStreams.get(pairingCode);
+  if (existing) {
+    existing.abortController.abort();
+    monitorStreams.delete(pairingCode);
+  }
+}
+
+function startMonitorStream(pairingCode, streamUrl) {
+  if (!pairingCode || !streamUrl || !mainWindow) {
+    return;
+  }
+  const existing = monitorStreams.get(pairingCode);
+  if (existing?.streamUrl === streamUrl) {
+    return;
+  }
+  stopMonitorStream(pairingCode);
+  const abortController = new AbortController();
+  monitorStreams.set(pairingCode, { streamUrl, abortController });
+  readMjpegStream(pairingCode, streamUrl, abortController).catch((error) => {
+    if (!abortController.signal.aborted) {
+      mainWindow?.webContents.send("monitor:stream-error", {
+        pairingCode,
+        message: error.message
+      });
+    }
+  });
+}
+
+async function readMjpegStream(pairingCode, streamUrl, abortController) {
+  const response = await fetch(streamUrl, { signal: abortController.signal });
+  if (!response.ok || !response.body) {
+    throw new Error(`Stream failed: ${response.status} ${response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  let buffer = Buffer.alloc(0);
+  while (!abortController.signal.aborted) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer = Buffer.concat([buffer, Buffer.from(value)]);
+    while (buffer.length) {
+      const start = buffer.indexOf(Buffer.from([0xff, 0xd8]));
+      const end = buffer.indexOf(Buffer.from([0xff, 0xd9]), Math.max(start, 0));
+      if (start === -1 || end === -1 || end <= start) {
+        if (start > 0) {
+          buffer = buffer.slice(start);
+        }
+        break;
+      }
+      const jpeg = buffer.slice(start, end + 2);
+      buffer = buffer.slice(end + 2);
+      mainWindow?.webContents.send("monitor:frame", {
+        pairingCode,
+        dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
+        capturedAt: new Date().toISOString()
+      });
+    }
+  }
 }
 
 app.whenReady().then(async () => {
@@ -223,6 +297,9 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   accessService?.stop();
+  for (const pairingCode of monitorStreams.keys()) {
+    stopMonitorStream(pairingCode);
+  }
   if (process.platform !== "darwin") {
     app.quit();
   }

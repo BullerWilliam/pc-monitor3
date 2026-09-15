@@ -17,6 +17,8 @@ const grid = document.querySelector("#grid");
 
 let devices = [];
 let selectedCode = "";
+let activeStream = { pairingCode: "", url: "" };
+const latestFrames = new Map();
 
 function titleFor(device) {
   return device.nickname || device.pairingCode;
@@ -110,6 +112,7 @@ function renderDetails() {
     metadata.textContent = "Pair a PC to see status and system metadata.";
     screenImage.removeAttribute("src");
     screenPlaceholder.hidden = false;
+    stopActiveStream();
     return;
   }
 
@@ -120,13 +123,16 @@ function renderDetails() {
   metadata.textContent = metadataFor(device);
   const url = streamUrl(device);
   if (url) {
-    if (screenImage.src !== url) {
-      screenImage.src = url;
+    startStream(device.pairingCode, url);
+    const frame = latestFrames.get(device.pairingCode);
+    if (frame) {
+      screenImage.src = frame;
     }
     screenPlaceholder.hidden = true;
   } else {
     screenImage.removeAttribute("src");
     screenPlaceholder.hidden = false;
+    stopActiveStream();
   }
 }
 
@@ -136,12 +142,29 @@ function renderGrid() {
     const card = document.createElement("article");
     card.className = "grid-card";
     const url = streamUrl(device);
+    const frame = latestFrames.get(device.pairingCode);
     card.innerHTML = `
       <header><strong>${titleFor(device)}</strong><span>${statusFor(device)}</span></header>
-      ${url ? `<img src="${url}" alt="${titleFor(device)} screen" />` : "<p>No stream yet</p>"}
+      ${frame ? `<img src="${frame}" alt="${titleFor(device)} screen" />` : "<p>No stream yet</p>"}
     `;
     grid.appendChild(card);
   }
+}
+
+function startStream(pairingCode, url) {
+  if (activeStream.pairingCode === pairingCode && activeStream.url === url) {
+    return;
+  }
+  stopActiveStream();
+  activeStream = { pairingCode, url };
+  window.pcMonitor.monitor.startStream(pairingCode, url);
+}
+
+function stopActiveStream() {
+  if (activeStream.pairingCode) {
+    window.pcMonitor.monitor.stopStream(activeStream.pairingCode);
+  }
+  activeStream = { pairingCode: "", url: "" };
 }
 
 function render() {
@@ -215,20 +238,24 @@ closeGrid.addEventListener("click", () => {
   gridModal.classList.add("hidden");
 });
 
-screenImage.addEventListener("load", () => {
+window.pcMonitor.monitor.onFrame((frame) => {
+  latestFrames.set(frame.pairingCode, frame.dataUrl);
   const device = selectedDevice();
-  if (!device) {
-    return;
+  if (device?.pairingCode === frame.pairingCode) {
+    screenImage.src = frame.dataUrl;
+    screenPlaceholder.hidden = true;
+    window.pcMonitor.monitor.saveSnapshot(frame.pairingCode, frame.dataUrl);
   }
-  const canvas = document.createElement("canvas");
-  canvas.width = screenImage.naturalWidth;
-  canvas.height = screenImage.naturalHeight;
-  const context = canvas.getContext("2d");
-  try {
-    context.drawImage(screenImage, 0, 0);
-    window.pcMonitor.monitor.saveSnapshot(device.pairingCode, canvas.toDataURL("image/jpeg", 0.7));
-  } catch {
-    // Cross-origin streams may refuse canvas reads; the live preview still works.
+  if (!gridModal.classList.contains("hidden")) {
+    renderGrid();
+  }
+});
+
+window.pcMonitor.monitor.onStreamError((error) => {
+  const device = selectedDevice();
+  if (device?.pairingCode === error.pairingCode) {
+    screenPlaceholder.hidden = false;
+    screenPlaceholder.textContent = error.message;
   }
 });
 

@@ -48,7 +48,8 @@ function cpuLoadPercent() {
   if (totalDelta <= 0) {
     return 0;
   }
-  return Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
+  const percent = (1 - idleDelta / totalDelta) * 100;
+  return Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
 }
 
 function accessMetadata(state, screenSize, frameTimestamp, remoteInteractionRequested) {

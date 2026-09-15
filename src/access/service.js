@@ -231,12 +231,19 @@ function commandShimPaths() {
   const appDataCmd = commandShimPath();
   const appDataBat = appDataCmd.replace(/\.cmd$/i, ".bat");
   const exeDir = path.dirname(accessExecutablePath());
-  return [
+  const npmDir = path.join(app.getPath("appData"), "npm");
+  const windowsAppsDir = path.join(app.getPath("home"), "AppData", "Local", "Microsoft", "WindowsApps");
+  const candidates = [
     appDataCmd,
     appDataBat,
     path.join(exeDir, "access.cmd"),
-    path.join(exeDir, "access.bat")
+    path.join(exeDir, "access.bat"),
+    path.join(npmDir, "access.cmd"),
+    path.join(npmDir, "access.bat"),
+    path.join(windowsAppsDir, "access.cmd"),
+    path.join(windowsAppsDir, "access.bat")
   ];
+  return [...new Set(candidates)];
 }
 
 function installCommandShim() {
@@ -277,7 +284,12 @@ function installCommandShim() {
     "exit /b 0"
   ].join("\r\n");
   for (const shimPath of commandShimPaths()) {
-    fs.writeFileSync(shimPath, `${script}\r\n`, "utf8");
+    try {
+      fs.mkdirSync(path.dirname(shimPath), { recursive: true });
+      fs.writeFileSync(shimPath, `${script}\r\n`, "utf8");
+    } catch {
+      // Some PATH directories may be unavailable on locked-down machines.
+    }
   }
   addDirectoryToUserPath(binDir);
   return commandShimPath();
