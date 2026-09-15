@@ -288,7 +288,16 @@ FakesAssemblies/
 .ntvs_analysis.dat
 node_modules/
 dist/
-release/
+*win-unpacked*
+
+# Keep portable Electron executables visible while ignoring unpacked build folders.
+!release/
+!release/access/
+!release/monitor/
+!release/access/*.exe
+!release/monitor/*.exe
+release/**/builder-debug.yml
+
 
 # Visual Studio 6 build log
 *.plg
